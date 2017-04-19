@@ -18,7 +18,15 @@
 using namespace std;
 using namespace arma;
 
-void runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int trainStart, int trainStop, float trainRate, bool spikeTest)
+template <typename T>
+string toString(T value)
+{
+  stringstream stream;
+  stream << value;
+  return stream.str();
+}
+
+_Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int trainStart, int trainStop, float trainRate, int saveRate, bool spikeTest, int saveData)
 { 
   // note that trainStep should be given in units of dt, e.g. if integration
   // time is dt = 0.001 seconds and the training occurs every 0.05 seconds,
@@ -37,8 +45,11 @@ void runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int trai
 
   //Network parameters
   int N = net.N;
+  int nIn = net.nIn;
+  int nOut = net.nOut;
   float G = net.G;
   float Q = net.Q;
+  float p = net.p;
 
   //Network initial values
   vec v = net.v;
@@ -74,30 +85,28 @@ void runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int trai
   for (int i=0; i<T; i=i+1)
   {
     //Keep track of variable evolution every 100 steps
-    if (i%100 == 0 && i > 0)
+    if (i%saveRate == 0 && i > 0)
     {
-      //vSave = join_rows(vSave, v);
       rSave = join_rows(rSave, r);
-      //hSave = join_rows(hSave, h);
-      wOutSave = join_cols(wOutSave, wOut);
     }
     
     if (i%500 == 0)
     {
-      cout << "Iteration " << i << " out of " << T << "\t" << (float)(100*i/T) << " o/o progress" << endl;
+      cout << "Task " << saveData << " out of ?? " << endl;
+      cout << "Iteration " << i << " out of " << T << "\t" << (float)(100*i/T) << " \% progress" << endl;
     }
     
     //LIF EDOs system
     dv = (-v + vinf + w*r + wIn*input.col(i))/tm; //voltage
     v.elem(find(ref <= 0)) = v.elem(find(ref <= 0)) + dv.elem(find(ref <= 0))*dt; //update neurons not in refractory period
-
     //Double exponential filter
     dr = -r/td + h;
     r = r + dt*dr;
     
     dh = -h/tr; //h var
     h = h + dh*dt + conv_to<vec>::from(v > vth)/(tr*td); //update h
-    
+
+
     if (spikeTest && !spikeDeleted && (i == deleteTime))
     {
       uvec deletedNeuron = find(v > vth, 1, "first"); //
@@ -118,29 +127,23 @@ void runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int trai
       P = P - (P*r*r.t()*P)/(1 + arma::as_scalar(r.t()*P*r)); //update P
       wOut = wOut - err*r.t()*P.t(); //update output weights
       w = G*net.w + Q*wFb*wOut; //update weight matrix
-    
-      cout << "Iteration: " << i << "\t Error: " << err << endl;
     }
-  }
+  } //ENDFOR
   
   //Save new values
   net.v = v;
   net.r = r;
   net.h = h;
 
-  ostringstream Nstream, Gstream, Qstream;
-  Nstream << N;
+  ostringstream Gstream, Qstream;
   Qstream << Q;
   Gstream << G;
 
-  //P.save("P.dat", raw_ascii);
-  //vSave.save("v.dat", raw_ascii);
-  //rSave.save("r_N_" + Nstream.str() + "_G_" + Gstream.str() + "_Q_" + Qstream.str() + ".dat", raw_ascii);
-  rSave.save("r_disc.dat", raw_ascii);
-  //hSave.save("h.dat", raw_ascii);
-  //wOutSave.save("wOut_N_" + Nstream.str() + "_G_" + Gstream.str() + "_Q_" + Qstream.str() + ".dat", raw_ascii);
-  wOutSave.save("wOut_disc.dat", raw_ascii);
-  //spikes.save("spikes.dat", raw_ascii);
-  //w.save("w.dat", raw_ascii);
+  rSave.save("/home/neurociencia/discriminate/r_" + toString(saveData) + ".dat", raw_ascii);
+
+  _Net newNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, w, wIn, wOut, wFb, v, r, h);
+
+  return newNet;
 }
+
 #endif

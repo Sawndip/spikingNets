@@ -1,8 +1,13 @@
 #define INFINITY
-#include <typeinfo>
 #include "mconvert.h"
 #include "createSpikeNet.h"
 #include "runSpikeNet.h"
+#include <typeinfo>
+#include <fstream>
+#include <iostream>
+#include <sstream>
+#include <string>
+#include <cstdlib>
 #include <armadillo>
 using namespace std;
 using namespace arma;
@@ -22,6 +27,8 @@ mat uhlenbeck(float theta, float mu, float sigma, float dt, int T)
 
 
 int main(){
+  
+  // LIF Parameters
   float vth = -40.0;
   float vreset = -65.0;
   float vinf = -39.0;
@@ -30,36 +37,62 @@ int main(){
   float td = .03; //decrease
   float tr = .002; //rise
 
+  // Network parameters
   int N = 2000; //neurons
   float p = .1; //sparsity
   int nIn = 1; //inputs
   int nOut = 1; //outputs
-  float G = 1.0;
-  float Q = 20.0;
+  float G;
+  float Q;
 
-  int T = 10000; //total time in units of dt
-
-  vec v = (vth-vreset)*arma::randu<vec>(N)+vreset;
+  // Initial values
+  sp_mat sp_w = sprandn(N, N, p)/sqrt(N*p);
+  mat w(sp_w);
+  mat wIn = 2.0*arma::randu<mat>(N, nIn) - 1.0*arma::ones<mat>(N, nIn);
+  mat wOut = arma::zeros<mat>(nOut, N);
+  mat wFb = 2.0*arma::randu<mat>(N, nOut) - 1.0*arma::ones<mat>(N, nOut);
+  vec v = (vth - vreset)*arma::randu<vec>(N) + vreset; // uniformly distributed within the linear regime
   vec r = arma::zeros<vec>(N);
-  vec h = arma::randu<vec>(N);
+  vec h = arma::zeros<vec>(N);
+
+  _Net myNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, w, wIn, wOut, wFb, v, r, h);
   
+  // Integration parameters
+  float totalTime = 9; //total time in seconds
+  float dt = 5e-5; //integation timestep
+  int T = (int)totalTime/dt; //total time in units of dt
+
+  // True only for checking chaotic behaviour by removing one spike
   bool spikeTest = false;
 
-  _Net myNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, v, r, h);
-  
-  float dt = 5e-5;
-  int trainStep = (int)INFINITY;
+  // FORCE parameters
+  int trainStep = 5;
   float trainRate = 4e5; //the smaller the faster the training occurs
-  int trainStart = (int)T/5; //start training after trainStart*dt time
-  int trainStop = (int)7*T/10; //stop training here but keep net running
+  int trainStart = (int)T/9; //start training after trainStart*dt time
+  int trainStop = (int)5*T/9; //stop training here but keep net running
+  int saveRate = 180; //keep Nyquist-Shannon in mind when choosing this
 
+  // Input and target
   mat time = dt*linspace<vec>(0, T, T);
   mat inp = uhlenbeck(1.0, 0.0, 1.0, dt, T);
-  //mat tgt = sin(8.0*datum::pi*time).t() + 2.0*cos(4.0*datum::pi*time).t();
-  //tgt.save("tgt.dat", raw_ascii);
-  inp.save("uhl.dat", raw_ascii);
-
-  //runSpikeNet(myNet, inp, tgt, dt, trainStep, trainStart, trainStop, trainRate, spikeTest);
+  mat tgt = sin(5.0*2.0*datum::pi*time).t();
   
+  //tgt.save("tgt.dat", raw_ascii);
+  //inp.save("uhl.dat", raw_ascii);
+
+  ifstream file("/home/neurociencia/sine5Hz/gq.dat");
+  ofstream test("/home/neurociencia/test.txt");
+
+  if (file.is_open())
+  {
+    while (!file.eof())
+    {
+      file >> G >> Q;
+      test << vinf;
+
+      _Net myNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, w, wIn, wOut, wFb, v, r, h);
+      //runSpikeNet(myNet, inp, tgt, dt, trainStep, trainStart, trainStop, trainRate, saveRate, spikeTest);
+    }
+  }
   return 0;
 }

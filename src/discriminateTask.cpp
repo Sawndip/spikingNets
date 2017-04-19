@@ -3,79 +3,22 @@
 #include "mconvert.h"
 #include "createSpikeNet.h"
 #include "runSpikeNet.h"
+#include "stimulus.h"
 #include <armadillo>
+#include <iostream>
+#include <fstream>
+#include <cstdlib>
+#include <string>
+#include <sstream>
 using namespace std;
 using namespace arma;
 
-
-mat stimulus(int pattern, float dt, int T)
-{
-  int tWait0 = round(as_scalar(2.0*(arma::randu<vec>(1)) + 2.0)/dt);
-  mat wait0 = arma::zeros<mat>(1, tWait0);
-  mat inter = arma::zeros<mat>(1, round(1.0/dt));
-  mat b = sin(arma::linspace<vec>(0, datum::pi, round(1.0/dt))).t();
-  mat wait = arma::zeros<mat>(1, round(2.0/dt));
-  mat tgtWait = join_rows(join_rows(join_rows(wait0, inter), join_rows(inter, inter)), wait);
-  mat dec = arma::zeros<mat>(1, T - tgtWait.size());
-
-  mat inp0 = join_rows(join_rows(inter, inter), inter);
-  mat inp1 = join_rows(join_rows(b, inter), inter);
-  mat inp2 = join_rows(join_rows(inter, inter), b);
-  mat inp3 = join_rows(join_rows(b, inter), b);
-
-  mat stim = arma::zeros<mat>(4, T);
-
-  if (pattern == 1)
-  {
-    stim.row(1).cols(tWait0, tWait0 + b.size() - 1) = b;
-  }
-  else if (pattern == 2)
-  {  
-    stim = join_cols(join_cols(join_rows(join_rows(wait0, inp1), join_rows(wait, dec)),
-                                       join_rows(join_rows(wait0, inp2), join_rows(wait, dec))),
-                             join_cols(join_rows(tgtWait, dec) + 1.0,
-                                       join_rows(tgtWait, dec + .5) - 1.0));
-  }
-  else if (pattern == 3)
-  {  
-    stim = join_cols(join_cols(join_rows(join_rows(wait0, inp2), join_rows(wait, dec)),
-                                       join_rows(join_rows(wait0, inp1), join_rows(wait, dec))),
-                             join_cols(join_rows(tgtWait, dec) + 1.0,
-                                       join_rows(tgtWait, dec + .5) - 1.0));
-  }
-  else if (pattern == 4)
-  {  
-    stim = join_cols(join_cols(join_rows(join_rows(wait0, inp0), join_rows(wait, dec)),
-                                       join_rows(join_rows(wait0, inp3), join_rows(wait, dec))),
-                             join_cols(join_rows(tgtWait, dec + .5) + 1.0,
-                                       join_rows(tgtWait, dec) - 1.0));
-  }
-  else
-  {
-    cout << "mat stimulus must be 1-4 int" << endl;
-  }
-
-  return stim;
-}
-
-mat uhlenbeck(float theta, float mu, float sigma, float dt, int T)
-{
-  vec t = arma::linspace<vec>(0, T*dt, T);
-  mat x(1, T); x.fill(mu);
-
-  for (int i = 1; i < T; i++)
-  {
-    x(i) = theta*(mu - x(i-1))*dt + sigma*randn();
-  }
-
-  return x;
-}
-
-
 int main()
 {
+  arma_rng::set_seed(42);
   wall_clock timer;
 
+  // LIF Parameters
   float vth = -40.0;
   float vreset = -65.0;
   float vinf = -39.0;
@@ -84,40 +27,81 @@ int main()
   float td = .03; //decrease
   float tr = .002; //rise
 
+  // Network parameters
   int N = 2000; //neurons
   float p = .1; //sparsity
   int nIn = 2; //inputs
   int nOut = 2; //outputs
-  float G = 1.0;
+  float G = .05;
   float Q = 20.0;
 
-  int T = 200000; //total time in units of dt
-
+  // Initial values
+  sp_mat sp_w = sprandn(N, N, p)/sqrt(N*p); //random initial weights
+  mat w(sp_w);
+  mat wIn = 2.0*arma::randu<mat>(N, nIn) - 1.0*arma::ones<mat>(N, nIn); //uniform [-1,1]
+  mat wOut = arma::zeros<mat>(nOut, N); //zeros
+  mat wFb = 2.0*arma::randu<mat>(N, nOut) - 1.0*arma::ones<mat>(N, nOut); //uniform [-1,1]
   vec v = (vth-vreset)*arma::randu<vec>(N)+vreset;
   vec r = arma::zeros<vec>(N);
   vec h = arma::randu<vec>(N);
   
-  bool spikeTest = false;
+  // Initialize net
+  _Net myNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, w, wIn, wOut, wFb, v, r, h);
+ 
+  //Integration parameters
+  float totalTime = 7; //total time in seconds
+  float dt = 1e-1;
+  int T = (int)totalTime/dt; //total time in units of dt
+  int K = 70; //length of vector r(t)
+  int saveRate = round(T/K); //sampling rate of r
 
-  _Net myNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, v, r, h);
-  
-  float dt = 5e-5;
-  int trainStep = 50;
-  float trainRate = 4e2; //the smaller the faster the training occurs
+  // True only for checking chaotic behaviour by removing one spike
+  bool spikeTest = false;
+ 
+  // FORCE parameters
+  int trainStep = 5;
+  float trainRate = 4e5; //the smaller the faster the training occurs
   int trainStart = 0; //start training after trainStart*dt time
   int trainStop = T; //stop training here but keep net running
-
-  int pattern = 1;
-  mat stim = stimulus(pattern, dt, T);
-  mat inp = stim.rows(0, 1);
-  mat tgt = stim.rows(2, 3);
-
-  timer.tic();
-
-  runSpikeNet(myNet, inp, tgt, dt, trainStep, trainStart, trainStop, trainRate, spikeTest);
   
-  double timeTaken = timer.toc();
-  cout << "Total time (2e5 iterations with FORCE all through): " << timeTaken << " seconds" << endl;
+  // Tasks
+  int numIter = 8; //number of training tasks
+  vec samples = shuffle(linspace<vec>(1, numIter, numIter));
+  mat stim, inp, tgt;
+  samples.save("/home/neurociencia/discriminate/tasks.dat", raw_ascii);
+
+  // How much time does it take to train our network?
+  double timeTaken;
+
+  fstream logfile("/home/neurociencia/discriminate/discriminate.log", fstream::out);
+  
+  logfile << "Iteration \t Time (s)" << endl;
+
+  mat wSave, wOutSave;
+
+  for (int i = 0; i < numIter; i++)
+  {
+    stim = stimulus((int)as_scalar(samples(i))%4, dt, T);
+    inp = stim.rows(0, 1);
+    tgt = stim.rows(2, 3);
+    
+    timer.tic();
+
+    myNet = runSpikeNet(myNet, inp, tgt, dt, trainStep, trainStart, trainStop, trainRate, saveRate, spikeTest, i);
+
+    wSave = myNet.w;
+    wSave.save("/home/neurociencia/discriminate/w_" + toString(i) + ".dat", raw_ascii);
+    wOutSave = myNet.wOut;
+    wOutSave.save("/home/neurociencia/discriminate/wOut_" + toString(i) + ".dat", raw_ascii);
+
+    timeTaken = timer.toc();
+    
+    logfile << i+1 << " \t " << timeTaken << endl;
+    cout << "Total time: " << timeTaken << endl;
+  }
+
+  logfile.close();
 
   return 0;
 }
+

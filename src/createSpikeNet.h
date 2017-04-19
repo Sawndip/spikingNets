@@ -17,7 +17,7 @@ struct _Net
 } ;
 
 _Net createSpikeNet(float vth, float vreset, float vinf, float tref, float tm, float td, float tr, //LIF parameters
-                    int N, float p, int nIn, int nOut, float G, float Q, //network parameters
+                    int N, float p, int nIn, int nOut, float G, float Q, mat w, mat wIn, mat wOut, mat wFb, //network parameters
                     vec v, vec r, vec h) //dynamical variables
 {
   _Net net ;
@@ -40,11 +40,10 @@ _Net createSpikeNet(float vth, float vreset, float vinf, float tref, float tm, f
   net.Q = Q ; //coupling of the weight matrix to the learned weights
   
   //Initial values
-  net.w = sprandn(N, N, p)/sqrt(N*p); //initial random weights
-  net.wIn = randn(N, nIn)/sqrt(N); //initial random input weights
-  //net.wIn.rows((int)floor(N/3), N-1).fill(0.0); //only 1/3 start being nonzero
-  net.wOut = arma::zeros<mat>(nOut, N); //decoders
-  net.wFb = 2*arma::randu<mat>(N, nOut)-1 ; //encoders
+  net.w = w; //initial random weights
+  net.wIn = wIn; //initial random input weights
+  net.wOut = wOut; //decoders
+  net.wFb = wFb; //encoders
   
   net.v = v; //initial voltages
   net.r = r; //initial firing rates

@@ -14,11 +14,16 @@ int main()
   float Q = 0.05;
   string b = "b";
   ostringstream convert;
-  convert << N;
+  //convert << N;
   string s = "a" + b + convert.str();
   ostringstream convertQ;
   convertQ << Q;
   s = s + convertQ.str();
-  cout << s << endl;
+
+  for (int i=0; i<N; i++)
+  {
+    convert << i;
+    cout << convert.str() << endl;
+  }
   return 0;
 }
