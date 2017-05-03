@@ -2,7 +2,6 @@
   #define ARMA_64BIT_WORD  
 #endif
 #define INFINITY
-#include "mconvert.h"
 #include "createSpikeNet.h"
 #include "runSpikeNet.h"
 #include <typeinfo>
@@ -51,7 +50,7 @@ int main(){
 
   // Initial values
   sp_mat sp_w = sprandn(N, N, p)/sqrt(N*p);
-  mat w(sp_w);
+  mat w0(sp_w);
   mat wOut = arma::zeros<mat>(nOut, N);
   mat wIn = 2.0*arma::randu<mat>(N, nIn) - 1.0*arma::ones<mat>(N, nIn);
   mat wFb = 2.0*arma::randu<mat>(N, nOut) - 1.0*arma::ones<mat>(N, nOut);
@@ -83,7 +82,7 @@ int main(){
   int saveRate = 100;
   string savePath = "/home/neurociencia/disc/G_005_Q_20_l_4e5/";
 
-  _Net myNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, w, wIn, wOut, wFb, v, r, h, dv, dr, dh, spikes, ref, P, err);
+  _Net myNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, w0, wIn, wOut, wFb, v, r, h, dv, dr, dh, spikes, ref, P, err);
 
   // Read input and target from file
   ivec trials;

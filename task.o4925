@@ -1,0 +1,13 @@
+Running on Node nodo02.clusterneur
+Wed May  3 13:31:36 CEST 2017
+/dev/mapper/vg_brain-LogVol01 on / type ext4 (rw)
+proc on /proc type proc (rw)
+sysfs on /sys type sysfs (rw)
+devpts on /dev/pts type devpts (rw,gid=5,mode=620)
+tmpfs on /dev/shm type tmpfs (rw)
+/dev/sda1 on /boot type ext4 (rw)
+none on /proc/sys/fs/binfmt_misc type binfmt_misc (rw)
+brainfs01@tcp0:/home on /home type lustre (rw,_netdev)
+brainfs01@tcp0:/data on /data type lustre (rw,_netdev)
+/home/lib/armadillo/usr/local/lib64:/usr/lib64:
+/home/javier/spikingNets/bin/tmpxor.x: error while loading shared libraries: libopenblaso.so.0: cannot open shared object file: No such file or directory

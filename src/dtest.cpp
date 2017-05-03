@@ -2,7 +2,6 @@
   #define ARMA_64BIT_WORD  
 #endif
 #define INFINITY
-#include "mconvert.h"
 #include "createSpikeNet.h"
 #include "runSpikeNet.h"
 #include <typeinfo>
@@ -31,8 +30,6 @@ mat uhlenbeck(float theta, float mu, float sigma, float dt, int T)
 int main(){
   
   arma_rng::set_seed(42);
-
-  string savePath = "/disc/G_005_Q_20_l_4e5/test10/";
   
   // LIF Parameters
   float vth = -40.0;
@@ -54,10 +51,11 @@ int main(){
   // Initial values
   sp_mat w_sp = sprandn(N, N, p)/sqrt(N*p);
   string loadPath = "/home/neurociencia/disc/G_005_Q_20_l_4e5/";
-  mat w, wOut, wIn, wFb;
-  w.load(loadPath + "w9.dat", raw_ascii);
-  wOut.load(loadPath + "wOut9.dat", raw_ascii);
-  wIn = 2.0*arma::randu<mat>(N, nIn) - 1.0*arma::ones<mat>(N, nIn);
+  string savePath = "/home/neurociencia/disc/G_005_Q_20_l_4e5/test11/";
+  mat w0, wOut, wIn, wFb;
+  w0.load(loadPath + "w_init.dat", raw_ascii);
+  wOut.load(loadPath + "wOut10.dat", raw_ascii);
+  wIn.load(loadPath + "wIn_init.dat", raw_ascii);
   wFb.load(loadPath + "wFb_init.dat", raw_ascii);
   
   vec v = (vth - vreset)*arma::randu<vec>(N) + vreset; // uniformly distributed within the linear regime
@@ -86,7 +84,7 @@ int main(){
   int trainStop = T;
   int saveRate = 100;
 
-  _Net myNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, w, wIn, wOut, wFb, v, r, h, dv, dr, dh, spikes, ref, P, err);
+  _Net myNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, w0, wIn, wOut, wFb, v, r, h, dv, dr, dh, spikes, ref, P, err);
 
   // Read input and target from file
   ivec trials;
@@ -101,7 +99,7 @@ int main(){
 
   myNet = runSpikeNet(myNet, arma::zeros<mat>(nIn, 10000), arma::zeros<mat>(nOut, 10000), dt, (int)INFINITY, 0, 10000, trainRate, (int)INFINITY, 0, (int)INFINITY, savePath, false, 0); //run for 0.5 seconds to reach equilibrium
 
-  for (int j = 0; j < trials.n_elem; j++)
+  for (int j = 19; j < trials.n_elem; j++)
   {
     trial.load("/home/neurociencia/disc/trial" + toString(arma::as_scalar(trials.row(j))) + ".dat");
     inp = trial.cols(0,2);
@@ -111,11 +109,11 @@ int main(){
 
     myNet = runSpikeNet(myNet, inp, tgt, dt, trainStep, trainStart, trainStop, trainRate, saveRate, j, (int)INFINITY, savePath, spikeTest, 0);
 
-    w = myNet.w;
-    w.save("/home/neurociencia/" + savePath + "/w" + toString(j) + ".dat", raw_ascii);
+    w0 = myNet.w0;
+    w0.save(savePath + "w" + toString(j) + ".dat", raw_ascii);
 
     wOut = myNet.wOut;
-    wOut.save("/home/neurociencia/" + savePath + "wOut" + toString(j) + ".dat", raw_ascii);
+    wOut.save(savePath + "wOut" + toString(j) + ".dat", raw_ascii);
   
   }
 
