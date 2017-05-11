@@ -4,16 +4,18 @@
 using namespace std;
 using namespace arma;
 
-_Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int trainStart, int trainStop, int saveRate, int saveData, int saveFORCE, string savePath, bool spikeTest)
+_Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int saveRate, int numTrial, string netPath, string savePath, bool spikeTest, bool rasterPlot, ofstream& logfile)
 {
-  arma_rng::set_seed(42); 
+  // Shouldn't need this: arma_rng::set_seed(42); 
   // note that trainStep should be given in units of dt, e.g. if integration
   // time is dt = 0.001 seconds and the training occurs every 0.05 seconds,
   // then int trainStep = 50;
   // Setting int trainStep = INFINITY the network runs without training, so
   // this function can be used to initialize it too.
   
-  //LIF neurons' parameters
+  int T = input.n_cols; //time duration of input
+  
+  // LIF neurons' parameters
   float vth = net.vth;
   float vreset = net.vreset;
   float vinf = net.vinf;
@@ -22,7 +24,7 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int trai
   float td = net.td;
   float tr = net.tr;
 
-  //Network parameters
+  // Network parameters
   int N = net.N;
   float p = net.p;
   int nIn = net.nIn;
@@ -30,57 +32,47 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int trai
   float G = net.G;
   float Q = net.Q;
   float lambda = net.lambda;
-  
+  cout << "loaded LIF and arch params" << endl;  
+  // Weights
   mat wIn = net.wIn;
   mat wOut = net.wOut;
   mat wFb = net.wFb;
   mat w0 = net.w0;
- 
-  //Network initial values
+  cout << "loaded weights" << endl;
+  // Iinitial values
   vec v = net.v;
   vec r = net.r;
   vec h = net.h;
-  vec dv = net.dv;
-  vec dr = net.dr;
-  vec dh = net.dh;
-  vec spikes = net.spikes;
-  vec ref = net.ref;
+  vec dv, dr, dh, spikes, ref;
+  ref.zeros(N);
   
-  int T = input.n_cols; //time duration of input
-  
-  //FORCE initial values
-  mat P = net.P;
-  mat err = net.err;
-  
-  //Save time evolution of variables here
-  mat vSave = v;
+  cout << "loaded init vals" << endl;
+  /* FORCE initial values */
+  mat P, err;
+  P.load(netPath + "init/P.dat", raw_ascii);
+  cout << "loaded force" << endl;
+  /* Save time evolution of firing rate */
   mat rSave = r;
-  mat hSave = h;
-  mat wOutSave = wOut;
-
-  //Test for chaos deleting spike
+  mat raster;
+  cout << "time evol defined" << endl;
+  /* Test for chaos deleting spike */
   bool spikeDeleted = false;
-  int deleteTime = (int)(T/2.0); //delete a spike only in the second half of the interval
+  int deleteTime = (int)(T/2.0); //delete a spike at t = totalTime/2
 
+
+  /* Integration loop */
   vec inputNow, tgtNow;
-
+  
   for (int i=0; i<T; i=i+1)
   {
 
     inputNow = input.col(i);
     tgtNow = tgt.col(i);
 
-    //Keep track of variable evolution every saveRate steps plus final
-    //iteration
-    if ((i%saveRate == 0 || i == T-1) && i > 0)
-    {
-      rSave = join_rows(rSave, r);
-      vSave = join_rows(vSave, v);
-    }
 
     if (i%500 == 0)
     {
-      cout << "Iteration " << i << " out of " << T << "\t" << (float)(100*i/T) << " \% progress" << endl;
+      logfile << "Iteration " << i << " out of " << T << "\t" << (float)(100*i/T) << " \% progress \n";
     }
 
 
@@ -88,17 +80,18 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int trai
 
     // Voltage ODE
     dv = (-v + vinf + G*w0*r + Q*wFb*wOut*r + wIn*inputNow)/tm; //voltage
+    
     // Update neurons not in refractory period
     v.elem(find(ref <= 0)) = v.elem(find(ref <= 0)) + dv.elem(find(ref <= 0))*dt;
    
     // Double exponential filter
-    dr = -r/td + h;
-    r = r + dt*dr;
-
     dh = -h/tr;
     h = h + dh*dt + conv_to<vec>::from(v > vth)/(tr*td);
 
-    /* Spike deletion - only for testing chaos */
+    dr = -r/td + h;
+    r = r + dt*dr;
+
+     /* Spike deletion - only for testing chaos */
     if (spikeTest && !spikeDeleted && (i == deleteTime))
     {
       uvec deletedNeuron = find(v > vth, 1, "first"); //
@@ -115,7 +108,7 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int trai
 
     /* FORCE learning */
 
-    if (i%trainStep == 0 && i > trainStart && i < trainStop)
+    if (i%trainStep == 0 && i > 0)
     {
       err = wOut*r - tgtNow; //error
       P = P - (P*r*r.t()*P)/(1 + as_scalar(r.t()*P*r)); //update P
@@ -123,32 +116,52 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int trai
     
       if (i%500 == 0)
       {
-        cout << "FORCING w/ error: " << arma::as_scalar(accu(err)) << endl;
+        logfile << "FORCING w/ error: " << arma::as_scalar(accu(err)) << "\n";
       }
+    }
 
-      if ((i%saveFORCE == 0 || i == T - 1) && i > 0)
-      {
-        P.save(savePath + "P" + toString(i) + ".dat", raw_ascii);
-        wOut.save(savePath + "wOut" + toString(i) + ".dat", raw_ascii);
-      }
+
+    /* Save time evolution of variables */
+    
+    if (i%saveRate == 0)
+    {
+      rSave = join_rows(rSave, r);
+    }
+
+    if (rasterPlot)
+    {
+      raster = join_rows(raster, spikes);
     }
   } //ENDFOR
   
-  //Save new values
-  net.v = v;
-  net.r = r;
-  net.h = h;
+  /* Save final values as initial values for next trial */
+  v.save(netPath + toString("init/v.dat"), raw_ascii);
+  h.save(netPath + toString("init/h.dat"), raw_ascii);
+  r.save(netPath + toString("init/r.dat"), raw_ascii);
+  P.save(netPath + toString("init/P.dat"), raw_ascii);
+  wOut.save(netPath + toString("init/wOut.dat"), raw_ascii);
 
-  rSave.save(savePath + "r" + toString(saveData) + ".dat", raw_ascii);
-  vSave.save(savePath + "v" + toString(saveData) + ".dat", raw_ascii);
-  wOut.save(savePath + "wOut" + toString(saveData) + ".dat", raw_ascii);
+  /* Save fire rate and final weights to get output */
+  string saveData;
 
-  _Net newNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, lambda, w0, wIn, wOut, wFb, v, r, h, dv, dr, dh, spikes, ref, P, err);
+  if (numTrial < 10)
+  {
+    saveData = "0" + toString(numTrial);
+  }
+  else
+  {
+    saveData = toString(numTrial);
+  }
+  
+  rSave.save(savePath + "r" + saveData + ".dat", raw_ascii);
+  wOut.save(savePath + "wOut" + saveData + ".dat", raw_ascii);
+
+  _Net newNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, lambda, w0, wIn, wOut, wFb, v, r, h);
 
   return newNet;
 };
 
-_Net equilibrateSpikeNet(_Net myNet, float dt, float time)
+_Net equilibrateSpikeNet(_Net myNet, float dt, float time, string netPath, string savePath, ofstream& logfile)
 {
   int T = round(time/dt);
   mat dummyInp, dummyTgt;
@@ -156,15 +169,12 @@ _Net equilibrateSpikeNet(_Net myNet, float dt, float time)
   dummyTgt.zeros(myNet.nOut, T);
 
   int trainStep = (int)INFINITY;
-  int trainStart = 0;
-  int trainStop = T;
-  int saveRate = (int)INFINITY;
-  int saveFORCE = (int)INFINITY;
+  int saveRate = 100;
   bool spikeTest = false;
-  int saveData = 0;
-  string savePath = "none";
+  bool rasterPlot = false;
+  int numTrial = 0;
 
-  _Net newNet = runSpikeNet(myNet, dummyInp, dummyTgt, dt, trainStep, trainStart, trainStop, saveRate, saveData, saveFORCE, savePath, spikeTest);
+  _Net newNet = runSpikeNet(myNet, dummyInp, dummyTgt, dt, trainStep, saveRate, numTrial, netPath, savePath, spikeTest, rasterPlot, logfile);
 
   return newNet;
 }
