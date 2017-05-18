@@ -4,7 +4,7 @@
 using namespace std;
 using namespace arma;
 
-_Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int saveRate, int numTrial, string netPath, string savePath, bool spikeTest, bool rasterPlot, ofstream& logfile)
+_Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int saveRate, int numTrial, int FORCEmode, string netPath, string savePath, bool spikeTest, bool rasterPlot, ofstream& logfile)
 {
   // Shouldn't need this: arma_rng::set_seed(42); 
   // note that trainStep should be given in units of dt, e.g. if integration
@@ -49,6 +49,7 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int save
   cout << "loaded init vals" << endl;
   /* FORCE initial values */
   mat P, err;
+  mat identity = eye<mat>(N, N);
   P.load(netPath + "init/P.dat", raw_ascii);
   cout << "loaded force" << endl;
   /* Save time evolution of firing rate */
@@ -72,6 +73,7 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int save
 
     if (i%500 == 0)
     {
+      cout << "Iteration " << i << " out of " << T << "\t" << (float)(100*i/T) << " \% progress \n";
       logfile << "Iteration " << i << " out of " << T << "\t" << (float)(100*i/T) << " \% progress \n";
     }
 
@@ -79,17 +81,14 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int save
     /* LIF equations */
 
     // Voltage ODE
-    dv = (-v + vinf + G*w0*r + Q*wFb*wOut*r + wIn*inputNow)/tm; //voltage
+    dv = (-v + vinf)/tm + G*w0*r + Q*wFb*wOut*r + wIn*inputNow; //voltage
     
     // Update neurons not in refractory period
     v.elem(find(ref <= 0)) = v.elem(find(ref <= 0)) + dv.elem(find(ref <= 0))*dt;
    
     // Double exponential filter
-    dh = -h/tr;
-    h = h + dh*dt + conv_to<vec>::from(v > vth)/(tr*td);
-
-    dr = -r/td + h;
-    r = r + dt*dr;
+    h = h - h*dt/tr + conv_to<vec>::from(v > vth)/(tr*td);
+    r = r + dt*(-r/td + h);
 
      /* Spike deletion - only for testing chaos */
     if (spikeTest && !spikeDeleted && (i == deleteTime))
@@ -111,11 +110,21 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int save
     if (i%trainStep == 0 && i > 0)
     {
       err = wOut*r - tgtNow; //error
-      P = P - (P*r*r.t()*P)/(1 + as_scalar(r.t()*P*r)); //update P
+      
+      if (FORCEmode == 0)
+      {
+        P = P - (P*r*r.t()*P)/(1 + as_scalar(r.t()*P*r)); //update P
+      }
+      else if (FORCEmode == 1)
+      {
+        P = inv(lambda*identity + rSave*rSave.t());
+      }
+      
       wOut = wOut - err*r.t()*P.t(); //update output weights
     
       if (i%500 == 0)
       {
+        cout << "FORCING w/ error: " << arma::as_scalar(accu(err)) << "\n";
         logfile << "FORCING w/ error: " << arma::as_scalar(accu(err)) << "\n";
       }
     }
@@ -123,7 +132,7 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int save
 
     /* Save time evolution of variables */
     
-    if (i%saveRate == 0)
+    if (i%saveRate == 0 && i > 0)
     {
       rSave = join_rows(rSave, r);
     }
@@ -146,6 +155,14 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int save
 
   if (numTrial < 10)
   {
+    saveData = "000" + toString(numTrial);
+  }
+  else if ((numTrial >= 10) && (numTrial < 100))
+  {
+    saveData = "00" + toString(numTrial);
+  }
+  else if ((numTrial >= 100) && (numTrial < 1000))
+  {
     saveData = "0" + toString(numTrial);
   }
   else
@@ -161,7 +178,7 @@ _Net runSpikeNet(_Net net, mat input, mat tgt, float dt, int trainStep, int save
   return newNet;
 };
 
-_Net equilibrateSpikeNet(_Net myNet, float dt, float time, string netPath, string savePath, ofstream& logfile)
+_Net equilibrateSpikeNet(_Net myNet, float dt, float time, int FORCEmode, string netPath, string savePath, ofstream& logfile)
 {
   int T = round(time/dt);
   mat dummyInp, dummyTgt;
@@ -169,12 +186,12 @@ _Net equilibrateSpikeNet(_Net myNet, float dt, float time, string netPath, strin
   dummyTgt.zeros(myNet.nOut, T);
 
   int trainStep = (int)INFINITY;
-  int saveRate = 100;
+  int saveRate = 1;
   bool spikeTest = false;
   bool rasterPlot = false;
   int numTrial = 0;
 
-  _Net newNet = runSpikeNet(myNet, dummyInp, dummyTgt, dt, trainStep, saveRate, numTrial, netPath, savePath, spikeTest, rasterPlot, logfile);
+  _Net newNet = runSpikeNet(myNet, dummyInp, dummyTgt, dt, trainStep, saveRate, numTrial, FORCEmode, netPath, savePath, spikeTest, rasterPlot, logfile);
 
   return newNet;
 }

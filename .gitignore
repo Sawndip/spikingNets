@@ -1,2 +1,5 @@
-**/bin/
-**/figures/
+bin/
+figures/
+*.dat
+*.mat
+*.x

@@ -1,6 +1,6 @@
 #!/bin/bash
-#PBS -w /home/neurociencia/tmpxor/
-#PBS -N tmpxor
+#PBS -w /home/neurociencia/tmpxor/depasquale
+#PBS -N tmpxor6
 #PBS -q workq
 #PBS -l nodes=1:ppn=24
 #PBS -j oe

@@ -1,7 +1,7 @@
-function [r, wOut, z, w0, wFb, w, e, score, latent, explained] = loadData(path, mode)
+function [r, wOut, z, countTrials] = loadData(path)
 
 currentPath = pwd;
-cd(path)
+cd(strcat(path))
 files = dir();
 
 r = [];
@@ -11,14 +11,12 @@ countTrials = 0;
 for i=1:length(files)
   
   if length(files(i).name) >= 4
-    
-    if (strcmp(files(i).name(1), 'r'))
-      
-      disp(strcat('Loading... ', files(i).name))
-      rNow = load(files(i).name);
-      r = [r, rNow(:,2:end)]; % first element is repeated
-      countTrials = countTrials + 1;
 
+    if (strcmp(files(i).name(1), 'r') && countTrials < 1000)
+        disp(strcat('Loading... ', files(i).name))
+        rNow = load(files(i).name);
+        r = [r, rNow];
+        countTrials = countTrials + 1;
     elseif strcmp(files(i).name(1:4), 'wOut')
       
       wOut = load(files(i).name);
@@ -27,65 +25,73 @@ for i=1:length(files)
   end
 end
 
-disp('Loading weights...')
-w0 = load('../static/w0.dat');
-wFb = load('../static/wFb.dat');
-w = .05*w0 + 30*wFb*wOut;
+%disp('Loading weights...')
+%w0 = load('../static/w0.dat');
+%wFb = load('../static/wFb.dat');
+%w = .04*w0 + 10*wFb*wOut;
 
 z = (wOut*r)';
 
-d = [];
-trials = load(strcat('/home/neurociencia/tmpxor/tmpxor', mode, '.dat'));
+%d = [];
+%trials = load(strcat(path, trialsFile));
+%base = load(strcat(path, 'base.dat'));
 
-disp('Loading trials...')
-for i=1:countTrials
-  d = [d; load(strcat('/home/neurociencia/tmpxor/tmpxor', num2str(trials(i)), '.dat'))];
-end
+%disp('Loading trials...')
+%for i=1:countTrials
+%  d = [d; trials(i,1)*base(:,2), trials(i,2)*base(:,2), base(:,3)];
+%end
 
+%totalTime = length(d)*dt;
 
-%% Plot input, target and output %%
-if strcmp(mode, 'Train28')
-  totalTime = 28;
-elseif strcmp(mode, 'Train56')
-  totalTime = 56;
-elseif (strcmp(mode, 'Train100') || strcmp(mode, 'Tests100'))
-  totalTime = countTrials;
-elseif strcmp(mode, 'Tests')
-  totalTime = 12;
-end
+%% -- REALLY HARDCODED -- %%
+%d = d(1:10:end, :);
+%idx = 1:length(d);
+%idx = idx(mod(idx, 400) ~= 0);
+%d = d(idx, :);
+%% -- You are now leaving the really hardcoded sector -- %%
 
-timez = linspace(0, 2*totalTime, length(z));
-timed = linspace(0, 2*totalTime, length(d));
+%timez = linspace(0, totalTime, length(z));
+%timed = linspace(0, totalTime, length(d));
 
-[coeff, score, latent, tsquared, explained, mu] = pca(r');
+%if (length(z) == length(d))
+%  tgt = d(:,2)-1;
+%  signal = z.*(tgt ~= 0);
+%  test = sign(signal).*sign(tgt);
+%  test = test(test ~= 0);
+%  disp('Success rate: ')
+%  disp(sum(test)/length(test))
+%else
+%  disp('SAMPLING ERROR')
+%  disp(strcat('length(z) = ', length(z)))
+%  disp(strcat('length(d) = ', length(d)))
+%  test = 0;
+%end
 
-figure(1)
-plot(timez, z-1, 'r',...
-     timez, .5*(score(:,1)/max(score(:,1)))-1, 'b',...
-     timed, d(:,2)-1, 'c',...
-     timed, d(:,1)+1, 'k')
+%disp('Computing principal components...')
+%[coeff, score, latent, tsquared, explained, mu] = pca(r');
 
-legend('Output', 'PCA1', 'Target', 'Input')
-title('Temporal XOR')
-xlabel('Time (s)')
-ylim([-2 2])
+%figure(1)
+%plot(timez, z, 'r',...
+%     timed, d(:,2), 'c')
 
+%legend('Output', 'Target')
+%title('Temporal XOR')
+%xlabel('Time (s)')
 
-disp('Computing eigenvalues...')
+%disp('Computing eigenvalues...')
 %% Plot w eigenvalues %%
-e = eig(w);
+%e = eig(w);
 
-figure(2)
-plot(e, 'o')
-title('Spectrum of w')
-axis('equal')
+%figure(2)
+%plot(e, 'o')
+%title('Spectrum of w')
+%axis('equal')
 
-disp('Computing principal components...')
 %% Plot PCAs %%
 
-figure(3)
-plot(score(:,1), score(:,2))
-xlabel('PCA 1')
-ylabel('PCA 2')
+%figure(3)
+%plot(score(:,1), score(:,2))
+%xlabel('PCA 1')
+%ylabel('PCA 2')
 
-cd(currentPath)
+%cd(currentPath)
