@@ -1,27 +1,58 @@
-function [r, wOut, z, d, score, explained, e] = svm(netPath, mode)
+function [t, r, z, inp, tgt, score, expvar, e, success] = svm(netPath, mode, d)
 
-[r, wOut, z, countTrials] = loadData(strcat(netPath, mode, '_100/'));
+dt = 5e-4;
+
+[r, wOut, z, countTrials] = loadData(strcat(netPath, mode));
 
 disp('Loading weights...')
 
-w0 = load('../static/w0.dat');
-wFb = load('../static/wFb.dat');
-w = .04*w0 + 10*wFb*wOut;
+arch = load(strcat(netPath, 'static/arch.dat'));
+N = arch(1);
+nIn = arch(3);
+nOut = arch(4);
+G = arch(5);
+Q = arch(6);
 
-base = load('../../base.dat');
-trials = load(strcat('../../y_geq_x_', mode, '.dat'));
+w0 = load(strcat(netPath, 'static/w0.dat'));
+wFb = load(strcat(netPath, 'static/wFb.dat'));
+w = G*w0 + Q*wFb*wOut;
 
-disp('Loading trials...')
-d = [];
+%base = load(strcat('/home/neurociencia/svm/base_', code, '.dat'));
+%trials = load(strcat('/home/neurociencia/svm/y_geq_x_', mode, '.dat'));
 
-for i=1:countTrials
-  d = [d; trials(i,1)*base(:,2), trials(i,2)*base(:,2), trials(i,3)*base(:,3)];
-end
+%disp('Loading trials...')
+%d = [];
 
-totalTime = length(d)*5e-4;
+%for i=1:countTrials
+%  if (strcmp(code, 'sequential'))
+%    d = [d; trials(i,1)*base(:,3)+trials(i,2)*base(:,4), trials(i,3)*base(:,5)];
+%  elseif (strcmp(code, 'simultaneous'))
+%    d = [d; trials(i,1)*base(:,3), trials(i,2)*base(:,4), trials(i,3)*base(:,5)];
+%  end
+%end
+
+totalTime = length(d)*dt;
+t = (linspace(0, totalTime, length(z)))';
+
+inp = d(1:10:end,3);
+tgt = d(1:10:end,4);
 
 disp('Computing PCA...')
-[coeff, score, latent, tsquared, explained, mu] = pca(r');
+[coeff, score, latent, tsquared, expvar, mu] = pca(r');
+
+sz = size(score);
+
+for i=1:sz(2)
+  score(:,i) = score(:,i)/max(abs(score(:,i)));
+end
 
 disp('Computing eigenvalues...')
 e = eig(w);
+
+success = 100*sum((z.*tgt)>0)/sum(abs(tgt)>0);
+
+figure(1)
+plot(t, [tgt-2 z-2 inp])
+xlabel('Time (s)')
+ylim([-3.3, max(inp)+.3])
+legend('Target', 'Output', 'PCA1', 'PCA2', 'Input')

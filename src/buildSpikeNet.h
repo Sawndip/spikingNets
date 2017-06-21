@@ -80,7 +80,7 @@ _Net createSpikeNet(float vth, float vreset, float vinf, float tref, float tm, f
   return myNet;
 };
 
-_Net loadSpikeNet(string netPath)
+_Net loadSpikeNet(string netPath, string initPath)
 {
   _Net myNet;
   
@@ -119,22 +119,20 @@ _Net loadSpikeNet(string netPath)
 
   arch.close();
 
-  cout << "LIF and arch \n" << endl;
   // Load network weights
 
   myNet.w0.load(netPath + "static/w0.dat", raw_ascii);
   myNet.wIn.load(netPath + "static/wIn.dat", raw_ascii);
   myNet.wFb.load(netPath + "static/wFb.dat", raw_ascii);
-  myNet.wOut.load(netPath + "init/wOut.dat", raw_ascii);
+  
+  myNet.wOut.load(initPath + "wOut.dat", raw_ascii);
 
-  cout << "weights read \n" << endl;
 
   // Load network state in phase space
 
-  myNet.v.load(netPath + toString("init/v.dat"), raw_ascii);
-  myNet.r.load(netPath + toString("init/r.dat"), raw_ascii);
-  myNet.h.load(netPath + toString("init/h.dat"), raw_ascii);
+  myNet.v.load(initPath + toString("v.dat"), raw_ascii);
+  myNet.r.load(initPath + toString("r.dat"), raw_ascii);
+  myNet.h.load(initPath + toString("h.dat"), raw_ascii);
   
-  cout << "inits read \n" << endl;
   return myNet;
 }

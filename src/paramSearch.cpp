@@ -1,61 +1,72 @@
-#include <iostream>
-#include <fstream>
-#include <armadillo>
-#include <string>
-#include <sstream>
-#include <cstdlib>
-#include "createSpikeNet.h"
 #include "runSpikeNet.h"
-using namespace std;
 using namespace arma;
 
 int main()
 {
-  int N;
-  float G, Q;
+  wall_clock timer;
 
-  float vth = -40.0;
-  float vreset = -65.0;
-  float vinf = -39.0;
-  float tref = .002;
-  float tm = .01;
-  float td = .02;
-  float tr = .002;
-
-  float p = .1;
-  int nIn = 1;
-  int nOut = 1;
-  
-  int T = 100000;
-
+  bool rasterPlot = false;
   bool spikeTest = false;
 
-  float dt = 5e-5;
-  int trainStep = (int)INFINITY;
-  float trainRate = 4e5;
-  int trainStart = (int)T/5;
-  int trainStop = (int)7*T/10;
+  string basePath = "/home/neurociencia/paramSearch/";
+  string netPath = basePath + toString("net1/");
+  string savePathTrain = netPath + toString("train/");
+  string savePathTest = netPath + toString("test/");
+  string savePathEq = netPath + toString("eq/");
+  string initPath = netPath + toString("init/");
+  string dynPath = netPath + toString("dyn/");
 
-  mat time = dt*linspace<vec>(0, T, T);
-  mat inp = 0.0*time.t();
-  mat tgt = sin(8.0*time).t();
+  ofstream logfile((netPath + toString("logfile.log")).c_str());
+  fstream timelogs((netPath + toString("timelogs.log")).c_str(), fstream::out);
 
-  ifstream file("parameters.dat");
+  float dt = 5e-4;
+  float eqTime = 1.0;
+  int trainStep = 5;
+  int saveRate = 10;
+  int j = 1;
+
+  mat train, test, inp, tgt;
+  train.load(basePath + "train_data.dat");
+  test.load(basePath + "test_data.dat");
+
+  double timeTaken;
+  timelogs << "Time" << endl;
+
+  ifstream params((basePath + toString("parameters.dat")).c_str());
   
-  if (file.is_open())
+  if (params.is_open())
   {
-    while (!file.eof())
+    while (!params.eof())
     {
-      file >> N >> G >> Q;
+      timer.tic();
+  
+      _Net myNet = loadSpikeNet(netPath, initPath);
+      
+      params >> myNet.G >> myNet.Q >> myNet.lambda;
 
-      vec v = (vth-vreset)*arma::randu<vec>(N)+vreset;
-      vec r = arma::zeros<vec>(N);
-      vec h = arma::randu<vec>(N);
+      /* Equilibrium */
+      myNet = equilibrateSpikeNet(myNet, dt, eqTime, netPath, initPath, savePathEq, logfile);
 
-      _Net myNet = createSpikeNet(vth, vreset, vinf, tref, tm, td, tr, N, p, nIn, nOut, G, Q, v, r, h);
+      /* Training */
+      inp = train.cols(0,2);
+      tgt = train.col(3);
+      inp = inp.t();
+      tgt = tgt.t();
 
-      runSpikeNet(myNet, inp, tgt, dt, trainStep, trainStart, trainStop, trainRate, spikeTest);
+      myNet = runSpikeNet(myNet, inp, tgt, dt, trainStep, saveRate, j, netPath, dynPath, savePathTrain, spikeTest, rasterPlot, logfile);
+      
+      /* Testing */
+      inp = test.cols(0,2);
+      tgt = test.col(3);
+      inp = inp.t();
+      tgt = tgt.t();
+      
+      myNet = runSpikeNet(myNet, inp, tgt, dt, (int)INFINITY, saveRate, j, netPath, dynPath, savePathTest, spikeTest, rasterPlot, logfile);
 
+      timeTaken = timer.toc();
+      timelogs << timeTaken << endl;
+
+      j = j+1;
     }
   }
   else cout << "Unable to open file" << endl;
