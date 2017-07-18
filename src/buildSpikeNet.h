@@ -2,6 +2,7 @@
 #include <sstream> /* stringstream */
 #include <fstream> /* (i|o)fstream */
 #include <iostream> /* cout */
+#include <sys/stat.h> /* stat */
 using namespace std;
 using namespace arma;
 
@@ -13,30 +14,7 @@ string toString(T value)
   return stream.str();
 }
 
-vec getLastLine(string pathToFile, int sz)
-{
-  string line;
-  vec myVec(sz);
-  ifstream myFile(pathToFile.c_str());
-  int i = 0;
-
-  if (myFile.is_open())
-  {
-    while (myFile >> ws && getline(myFile, line)); //go to last line
-    myFile.close();
-  } else cout << "unable to open file" << endl;
-
-  istringstream myLine(line);
-
-  while (!myLine.eof())
-  {
-    myLine >> myVec(i);
-    i++;
-  }
-
-  return myVec;
-}
-
+/* Declare basic _Net structure */
 struct _Net
 {
   int N, nIn, nOut;
@@ -45,11 +23,13 @@ struct _Net
   mat w0, wIn, wOut, wFb;
 };
 
+/* Create a new _Net from within a script/function - mostly deprecated in
+ * favour of loadSpikeNet() */
 _Net createSpikeNet(float vth, float vreset, float vinf, float tref, float tm, float td, float tr, int N, float p, int nIn, int nOut, float G, float Q, float lambda, mat w0, mat wIn, mat wOut, mat wFb, vec v, vec r, vec h)
 {
   _Net myNet;
 
-  //LIF parameters
+  /* LIF parameters */
   myNet.vth = vth; //threshold voltage
   myNet.vreset = vreset; //reset voltage
   myNet.vinf = vinf; //bias current
@@ -58,7 +38,7 @@ _Net createSpikeNet(float vth, float vreset, float vinf, float tref, float tm, f
   myNet.td = td; //synaptic decay time
   myNet.tr = tr; //synaptic rise time
   
-  //Network parameters
+  /* Network parameters */
   myNet.N = N; //number of neurons
   myNet.p = p; //network sparsity
   myNet.nIn = nIn; //number of input channels
@@ -67,7 +47,7 @@ _Net createSpikeNet(float vth, float vreset, float vinf, float tref, float tm, f
   myNet.Q = Q; //coupling of the weight matrix to the learned weights
   myNet.lambda = lambda; //training rate
 
-  //Initial values
+  /* Initial values */
   myNet.w0 = w0; //initial random weights
   myNet.wIn = wIn; //initial random input weights
   myNet.wOut = wOut; //decoders
@@ -80,59 +60,79 @@ _Net createSpikeNet(float vth, float vreset, float vinf, float tref, float tm, f
   return myNet;
 };
 
+/* Load _Net object from path netPath containing all the parameters in its
+ * subdirectories - note that netPath should be an absolute path */
 _Net loadSpikeNet(string netPath, string initPath)
 {
   _Net myNet;
   
-  // Load LIF parameters - voltage and decay time constants
+  /* Sanity checks on netPath's subdirectory structure */
+  struct stat st;
 
-  ifstream LIF ((netPath + toString("static/LIF.dat")).c_str());
-
-  if (LIF.is_open())
+  if (stat((netPath + toString("static/")).c_str(), &st) == 0)
   {
-    LIF >> myNet.vth;
-    LIF >> myNet.vreset;
-    LIF >> myNet.vinf;
-    LIF >> myNet.tref;
-    LIF >> myNet.tm;
-    LIF >> myNet.td;
-    LIF >> myNet.tr;
-  } else cout << "error opening LIF file \n";
+    /* Load LIF parameters - voltage and decay time constants */
 
-  LIF.close();
+    ifstream LIF (realpath((netPath + toString("static/LIF.dat")).c_str(), NULL));
 
+    if (LIF.is_open())
+    {
+      LIF >> myNet.vth;
+      LIF >> myNet.vreset;
+      LIF >> myNet.vinf;
+      LIF >> myNet.tref;
+      LIF >> myNet.tm;
+      LIF >> myNet.td;
+      LIF >> myNet.tr;
+    }
+    else
+    {
+      cout << "error opening LIF file\n";
+    }
 
-  // Load network architecture - # neurons, sparsity, # I/O, couplings
+    LIF.close();
 
-  ifstream arch ((netPath + toString("static/arch.dat")).c_str());
+    /* Load network architecture - # neurons, sparsity, # I/O, couplings */
+    ifstream arch (realpath((netPath + toString("static/arch.dat")).c_str(), NULL));
 
-  if (arch.is_open())
+    if (arch.is_open())
+    {
+      arch >> myNet.N;
+      arch >> myNet.p;
+      arch >> myNet.nIn;
+      arch >> myNet.nOut;
+      arch >> myNet.G;
+      arch >> myNet.Q;
+      arch >> myNet.lambda;
+    }
+    else
+    {
+      cout << "error opening arch file\n";
+    }
+
+    arch.close();
+
+    /* Load network weights - except wOut */
+    myNet.w0.load(realpath((netPath + "static/w0.dat").c_str(), NULL), raw_ascii);
+    myNet.wIn.load(realpath((netPath + "static/wIn.dat").c_str(), NULL), raw_ascii);
+    myNet.wFb.load(realpath((netPath + "static/wFb.dat").c_str(), NULL), raw_ascii);
+    
+
+  }
+  else
   {
-    arch >> myNet.N;
-    arch >> myNet.p;
-    arch >> myNet.nIn;
-    arch >> myNet.nOut;
-    arch >> myNet.G;
-    arch >> myNet.Q;
-    arch >> myNet.lambda;
-  } else cout << "error opening arch file \n";
+    cout << "please create /static directroy\n";
+  }
 
-  arch.close();
+  /* Load network state in phase space plus P and wOut */
 
-  // Load network weights
+  if (stat(initPath.c_str(), &st) == 0)
+  {
+    myNet.wOut.load(realpath((initPath + "wOut.dat").c_str(), NULL), raw_ascii);
+    myNet.v.load(realpath((initPath + toString("v.dat")).c_str(), NULL), raw_ascii);
+    myNet.r.load(realpath((initPath + toString("r.dat")).c_str(), NULL), raw_ascii);
+    myNet.h.load(realpath((initPath + toString("h.dat")).c_str(), NULL), raw_ascii);
+  } else cout << "error - specified initPath does not exist\n";
 
-  myNet.w0.load(netPath + "static/w0.dat", raw_ascii);
-  myNet.wIn.load(netPath + "static/wIn.dat", raw_ascii);
-  myNet.wFb.load(netPath + "static/wFb.dat", raw_ascii);
-  
-  myNet.wOut.load(initPath + "wOut.dat", raw_ascii);
-
-
-  // Load network state in phase space
-
-  myNet.v.load(initPath + toString("v.dat"), raw_ascii);
-  myNet.r.load(initPath + toString("r.dat"), raw_ascii);
-  myNet.h.load(initPath + toString("h.dat"), raw_ascii);
-  
   return myNet;
 }
